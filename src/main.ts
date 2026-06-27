@@ -236,8 +236,8 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 			return false;
 		}
 
-		const candidate = view as { getViewType?: unknown };
-		return typeof candidate.getViewType === "function" && candidate.getViewType() === "canvas";
+		const getViewType = (view as { getViewType?: () => string }).getViewType;
+		return typeof getViewType === "function" && getViewType() === "canvas";
 	}
 
 	private installLayerObserver() {
@@ -417,10 +417,6 @@ class CanvasLayerOrderSettingTab extends PluginSettingTab {
 	display() {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName("Canvas Layer Order")
-			.setHeading();
 
 		new Setting(containerEl)
 			.setName("Preserve layer order when focusing cards")
