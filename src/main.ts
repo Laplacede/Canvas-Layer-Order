@@ -6,8 +6,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	TFile,
-	WorkspaceLeaf
+	TFile
 } from "obsidian";
 import { CanvasData, LayerDirection, reorderCanvasNode } from "./layer-order";
 
@@ -99,14 +98,18 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 	onunload() {
 		this.observer?.disconnect();
 		if (this.syncFrame !== null) {
-			cancelAnimationFrame(this.syncFrame);
+			window.cancelAnimationFrame(this.syncFrame);
 		}
 		this.clearSyncTimeouts();
 		this.clearDomLayerOrder();
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const savedData: unknown = await this.loadData();
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...(this.isSettings(savedData) ? savedData : {})
+		};
 	}
 
 	async saveSettings() {
@@ -191,9 +194,8 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 	}
 
 	private getActiveCanvasView(): CanvasViewLike | null {
-		const leaf = this.app.workspace.activeLeaf as WorkspaceLeaf | null;
-		const view = leaf?.view as CanvasViewLike | undefined;
-		return view?.getViewType?.() === "canvas" ? view : null;
+		const view = this.app.workspace.getLeaf(false)?.view;
+		return this.isCanvasView(view) ? view : null;
 	}
 
 	private getSelectedNodeId(view: CanvasViewLike): string | null {
@@ -208,13 +210,34 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 			}
 		}
 
-		const activeElement = document.activeElement as HTMLElement | null;
+		const activeElement = document.activeElement;
 		const activeNode = activeElement?.closest?.("[data-node-id], .canvas-node") as HTMLElement | null;
 		return activeNode ? this.nodeIdFromElement(activeNode, canvas?.nodes) : null;
 	}
 
 	private nodeIdFromUnknown(item: CanvasNodeLike | null | undefined): string | null {
 		return item?.id ?? item?.node?.id ?? item?.data?.id ?? item?.child?.id ?? null;
+	}
+
+	private isSettings(value: unknown): value is Partial<CanvasLayerOrderSettings> {
+		if (typeof value !== "object" || value === null) {
+			return false;
+		}
+
+		const settings = value as { preserveLayerOrderOnFocus?: unknown };
+		return (
+			settings.preserveLayerOrderOnFocus === undefined ||
+			typeof settings.preserveLayerOrderOnFocus === "boolean"
+		);
+	}
+
+	private isCanvasView(view: unknown): view is CanvasViewLike {
+		if (typeof view !== "object" || view === null || !("getViewType" in view)) {
+			return false;
+		}
+
+		const candidate = view as { getViewType?: unknown };
+		return typeof candidate.getViewType === "function" && candidate.getViewType() === "canvas";
 	}
 
 	private installLayerObserver() {
@@ -232,13 +255,14 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 			return;
 		}
 
-		this.observer = new MutationObserver(() => this.scheduleLayerSync());
-		this.observer.observe(root, {
+		const observer = new MutationObserver(() => this.scheduleLayerSync());
+		observer.observe(root, {
 			attributes: true,
 			attributeFilter: ["class", "style"],
 			childList: true,
 			subtree: true
 		});
+		this.observer = observer;
 		this.scheduleLayerSyncBurst();
 	}
 
@@ -260,9 +284,9 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 			return;
 		}
 
-		this.syncFrame = requestAnimationFrame(async () => {
+		this.syncFrame = window.requestAnimationFrame(() => {
 			this.syncFrame = null;
-			await this.syncDomLayerOrder();
+			void this.syncDomLayerOrder();
 		});
 	}
 
@@ -299,7 +323,7 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 
 	private clearDomLayerOrder(view: CanvasViewLike | null = this.getActiveCanvasView()) {
 		const root = this.getCanvasRoot(view) ?? document;
-		root.querySelectorAll<HTMLElement>("[data-canvas-layer-order-z-index]").forEach((element) => {
+		root.querySelectorAll<HTMLElement>("[data-canvas-layer-order-z-index]").forEach((element: HTMLElement) => {
 			element.style.removeProperty("z-index");
 			element.removeAttribute("data-canvas-layer-order-z-index");
 		});
@@ -323,9 +347,10 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 		}
 
 		const escaped = this.escapeCss(nodeId);
-		document
+		const root = this.getCanvasRoot(view) ?? document;
+		root
 			.querySelectorAll<HTMLElement>(`[data-node-id="${escaped}"], .canvas-node[data-id="${escaped}"]`)
-			.forEach((element) => {
+			.forEach((element: HTMLElement) => {
 				elements.add(element);
 				const canvasNode = element.closest<HTMLElement>(".canvas-node");
 				if (canvasNode) {
@@ -367,7 +392,7 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 	}
 
 	private escapeCss(value: string): string {
-		return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
+		return CSS.escape ? CSS.escape(value) : value.replace(/"/g, '\\"');
 	}
 
 	private noticeFor(direction: LayerDirection): string {
@@ -392,7 +417,10 @@ class CanvasLayerOrderSettingTab extends PluginSettingTab {
 	display() {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl("h2", { text: "Canvas Layer Order" });
+
+		new Setting(containerEl)
+			.setName("Canvas Layer Order")
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName("Preserve layer order when focusing cards")

@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "node:process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
 const production = process.argv[2] === "production";
 const watch = process.argv[2] === "--watch";
@@ -25,7 +25,7 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtins
+		...builtinModules
 	],
 	format: "cjs",
 	logLevel: "info",
