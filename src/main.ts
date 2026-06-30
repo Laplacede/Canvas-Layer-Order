@@ -92,7 +92,7 @@ export default class CanvasLayerOrderPlugin extends Plugin {
 		this.registerDomEvent(document, "click", () => this.scheduleLayerSyncBurst());
 		this.registerDomEvent(document, "focusin", () => this.scheduleLayerSyncBurst());
 		this.addSettingTab(new CanvasLayerOrderSettingTab(this.app, this));
-		this.installLayerObserver();
+		this.app.workspace.onLayoutReady(() => this.installLayerObserver());
 	}
 
 	onunload() {
